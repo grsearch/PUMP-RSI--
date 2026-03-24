@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SOL RSI Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg:      #080b0f;
+    --bg2:     #0d1117;
+    --bg3:     #161b22;
+    --bg4:     #1e2631;
+    --border:  #2a3441;
+    --border2: #3a4553;
+    --text:    #e2e8f0;
+    --text2:   #94a3b8;
+    --text3:   #64748b;
+    --green:   #00ff88;
+    --red:     #ff4444;
+    --yellow:  #ffd600;
+    --blue:    #00aaff;
+    --purple:  #a855f7;
+    --cyan:    #00e5ff;
+    --orange:  #ff8c00;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    min-height: 100vh;
+  }
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 2px,
+      rgba(0,0,0,.025) 2px, rgba(0,0,0,.025) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* ── Header ─────────────────────────── */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 18px;
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 15px; font-weight: 700; letter-spacing: .05em;
+    color: var(--green);
+  }
+  .logo-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+  .header-right { display: flex; align-items: center; gap: 14px; }
+  .stat-pill {
+    display: flex; align-items: center; gap: 5px;
+    padding: 3px 9px;
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 4px;
+    font-size: 11px;
+  }
+  .stat-label { color: var(--text3); }
+  .stat-value { color: var(--text); font-weight: 500; }
+  .green  { color: var(--green)  !important; }
+  .red    { color: var(--red)    !important; }
+  .blue   { color: var(--blue)   !important; }
+  .yellow { color: var(--yellow) !important; }
+
+  .poll-status { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text3); }
+  .poll-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); transition: background .3s; }
+  .poll-dot.on { background: var(--green); }
+
+  /* ── Layout ─────────────────────────── */
+  .main { padding: 14px 18px; display: flex; flex-direction: column; gap: 14px; }
+
+  .section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 7px;
+  }
+  .section-title {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .1em; color: var(--text3);
+  }
+  .badge {
+    padding: 2px 7px;
+    background: var(--bg4); border: 1px solid var(--border); border-radius: 3px;
+    font-size: 10px; color: var(--text2);
+  }
+
+  /* ── Whitelist Table ─────────────────── */
+  .table-wrap {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
+    overflow: hidden; overflow-x: auto;
+  }
+  table { width: 100%; border-collapse: collapse; min-width: 860px; }
+  thead th {
+    padding: 7px 11px;
+    text-align: left; font-size: 10px; font-weight: 600;
+    letter-spacing: .07em; text-transform: uppercase;
+    color: var(--text3); background: var(--bg3);
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  tbody td {
+    padding: 9px 11px;
+    border-bottom: 1px solid rgba(42,52,65,.45);
+    vertical-align: middle; white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: rgba(255,255,255,.018); }
+
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 2px 7px; border-radius: 3px;
+    font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+  .s-watching { background: rgba(100,116,139,.12); color: var(--text3);  border: 1px solid rgba(100,116,139,.25); }
+  .s-bought   { background: rgba(0,255,136,.08);   color: var(--green);  border: 1px solid rgba(0,255,136,.25); }
+  .s-sold     { background: rgba(168,85,247,.1);   color: var(--purple); border: 1px solid rgba(168,85,247,.25); }
+
+  .token-link {
+    color: var(--blue); text-decoration: none; font-size: 11px;
+    transition: color .15s;
+  }
+  .token-link:hover { color: var(--cyan); text-decoration: underline; }
+
+  .rsi-wrap { display: flex; align-items: center; gap: 6px; }
+  .rsi-bar  { width: 54px; height: 4px; background: var(--bg4); border-radius: 2px; overflow: hidden; }
+  .rsi-fill { height: 100%; border-radius: 2px; transition: width .4s; }
+
+  .empty-td { text-align: center; padding: 36px; color: var(--text3); font-size: 12px; }
+
+  /* ── Signal Panel ────────────────────── */
+  .signal-panel {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  .signal-col-labels {
+    display: grid;
+    grid-template-columns: 120px 72px 68px 200px 1fr 90px;
+    padding: 6px 13px;
+    background: var(--bg3); border-bottom: 1px solid var(--border);
+    font-size: 10px; color: var(--text3); font-weight: 600;
+    text-transform: uppercase; letter-spacing: .07em;
+  }
+  .signal-list { overflow-y: auto; max-height: 260px; }
+  .signal-list::-webkit-scrollbar { width: 4px; }
+  .signal-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .signal-row {
+    display: grid;
+    grid-template-columns: 120px 72px 68px 200px 1fr 90px;
+    padding: 7px 13px;
+    border-bottom: 1px solid rgba(42,52,65,.35);
+    align-items: center;
+  }
+  .signal-row:last-child { border-bottom: none; }
+
+  .sig-time   { color: var(--text3); font-size: 11px; }
+  .sig-symbol { font-weight: 700; }
+  .sig-buy    { color: var(--green);  font-weight: 700; }
+  .sig-sell   { color: var(--red);    font-weight: 700; }
+  .sig-strat  { color: var(--text2);  font-size: 11px; }
+  .sig-addr   { color: var(--text3);  font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
+  .sig-price  { color: var(--text);   font-size: 11px; text-align: right; }
+
+  /* ── Scrollbar ───────────────────────── */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="logo">
+    <div class="logo-dot"></div>
+    SOL RSI MONITOR
+    <span style="color:var(--text3);font-size:11px;font-weight:400">v1.3</span>
+  </div>
+  <div class="header-right">
+    <div class="stat-pill">
+      <span class="stat-label">监控</span>
+      <span class="stat-value blue" id="s-total">0</span>
+    </div>
+    <div class="stat-pill">
+      <span class="stat-label">持仓</span>
+      <span class="stat-value green" id="s-bought">0</span>
+    </div>
+    <div class="stat-pill">
+      <span class="stat-label">信号</span>
+      <span class="stat-value" id="s-sigs">0</span>
+    </div>
+    <div class="stat-pill">
+      <span class="stat-label">总PNL</span>
+      <span class="stat-value" id="s-pnl">+0.0%</span>
+    </div>
+    <div class="poll-status">
+      <div class="poll-dot" id="poll-dot"></div>
+      <span id="poll-lbl">connecting…</span>
+    </div>
+  </div>
+</div>
+
+<!-- Main -->
+<div class="main">
+
+  <!-- Whitelist table -->
+  <div>
+    <div class="section-header">
+      <span class="section-title">📋 白名单监控</span>
+      <span class="badge" id="wl-badge">0 tokens</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Age</th>
+            <th>FDV</th>
+            <th>LP</th>
+            <th>价格 / 走势</th>
+            <th>RSI(7)</th>
+            <th>状态</th>
+            <th>当前PNL</th>
+            <th>累计PNL</th>
+            <th>交易次数</th>
+            <th>合约地址</th>
+          </tr>
+        </thead>
+        <tbody id="wl-body">
+          <tr><td colspan="11" class="empty-td">等待 webhook 推送代币...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Signal history -->
+  <div>
+    <div class="section-header">
+      <span class="section-title">📡 交易信号记录</span>
+      <span class="badge" id="sig-badge">0 signals</span>
+    </div>
+    <div class="signal-panel">
+      <div class="signal-col-labels">
+        <span>时间</span>
+        <span>代币</span>
+        <span>方向</span>
+        <span>策略</span>
+        <span>地址</span>
+        <span style="text-align:right">价格</span>
+      </div>
+      <div class="signal-list" id="sig-list">
+        <div class="empty-td">暂无信号记录</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════
+//  状态
+// ════════════════════════════════════════════════════════
+let whitelist = [];
+let signals   = [];
+
+// ════════════════════════════════════════════════════════
+//  REST 轮询（5 秒）
+// ════════════════════════════════════════════════════════
+async function fetchAll() {
+  try {
+    const [wl, sigs, stats] = await Promise.all([
+      fetch('/api/whitelist').then(r => { if (!r.ok) throw new Error(`whitelist HTTP ${r.status}`); return r.json(); }),
+      fetch('/api/signals?limit=100').then(r => { if (!r.ok) throw new Error(`signals HTTP ${r.status}`); return r.json(); }),
+      fetch('/api/stats').then(r => { if (!r.ok) throw new Error(`stats HTTP ${r.status}`); return r.json(); }),
+    ]);
+    whitelist = wl;
+    signals   = sigs;
+    renderWhitelist();
+    renderSignals();
+    renderStats(stats);
+    setPollStatus(true);
+  } catch (e) {
+    setPollStatus(false);
+    console.warn('[Poll] 请求失败:', e.message);
+  }
+}
+
+function setPollStatus(ok) {
+  document.getElementById('poll-dot').classList.toggle('on', ok);
+  document.getElementById('poll-lbl').textContent = ok ? 'live' : 'retrying…';
+}
+
+// ════════════════════════════════════════════════════════
+//  格式化工具
+// ════════════════════════════════════════════════════════
+function fmtPrice(p) {
+  if (p === null || p === undefined || p === 0) return '—';
+  if (p < 0.000001) return p.toExponential(3);
+  if (p < 0.001)    return p.toFixed(7);
+  if (p < 1)        return p.toFixed(5);
+  return p.toFixed(4);
+}
+
+function fmtUSD(v) {
+  if (!v || v === 0) return '—';
+  if (v >= 1e9) return `$${(v / 1e9).toFixed(2)}B`;
+  if (v >= 1e6) return `$${(v / 1e6).toFixed(2)}M`;
+  if (v >= 1e3) return `$${(v / 1e3).toFixed(1)}K`;
+  return `$${v.toFixed(0)}`;
+}
+
+function fmtAge(min) {
+  const m = parseFloat(min);
+  if (m < 1) return `${Math.round(m * 60)}s`;
+  return `${m.toFixed(1)}m`;
+}
+
+/**
+ * RSI 数字颜色：
+ *   >= 80  橙色（极度超买，卖出区间）
+ *   >= 70  红色（超买，卖出区间）
+ *   <= 30  绿色（超卖，买入区间）
+ *   其他   蓝色（中性）
+ */
+function rsiColor(rsi) {
+  if (rsi === null || rsi === undefined) return 'var(--text3)';
+  if (rsi >= 80) return 'var(--orange)';
+  if (rsi >= 70) return 'var(--red)';
+  if (rsi <= 30) return 'var(--green)';
+  return 'var(--blue)';
+}
+
+function sparkline(candles, w = 64, h = 18) {
+  if (!candles || candles.length < 2) {
+    return '<span style="color:var(--text3);font-size:10px">——</span>';
+  }
+  const cls = candles.map(c => c.close);
+  const mn  = Math.min(...cls);
+  const mx  = Math.max(...cls);
+  const rng = mx - mn || 1;
+  const pts = cls.map((v, i) =>
+    `${(i / (cls.length - 1)) * w},${h - ((v - mn) / rng) * h}`
+  ).join(' ');
+  const col = cls[cls.length - 1] >= cls[0] ? '#00ff88' : '#ff4444';
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"
+    style="display:inline-block;vertical-align:middle">
+    <polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.5" opacity=".85"/>
+  </svg>`;
+}
+
+// ════════════════════════════════════════════════════════
+//  渲染
+// ════════════════════════════════════════════════════════
+const STATUS_HTML = {
+  watching: '<span class="status-badge s-watching">⚪ 观察</span>',
+  bought:   '<span class="status-badge s-bought">🟢 持仓</span>',
+  sold:     '<span class="status-badge s-sold">🟣 已卖</span>',
+};
+
+function renderWhitelist() {
+  const tbody = document.getElementById('wl-body');
+  document.getElementById('wl-badge').textContent = `${whitelist.length} tokens`;
+
+  if (whitelist.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="11" class="empty-td">等待 webhook 推送代币...</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = whitelist.map(t => {
+    const rsiVal = t.currRSI !== null ? t.currRSI.toFixed(1) : '——';
+    // 进度条宽度：null 时为 0，不当成 0 值处理
+    const rsiPct = t.currRSI !== null ? t.currRSI : 0;
+    const rsiCol = rsiColor(t.currRSI);
+
+    const pnlLive = t.status === 'bought'
+      ? `<span class="${t.pnlPercent >= 0 ? 'green' : 'red'}">${t.pnlPercent >= 0 ? '+' : ''}${t.pnlPercent.toFixed(1)}%</span>`
+      : '<span style="color:var(--text3)">—</span>';
+
+    const pnlTotal = t.totalPnlPct !== 0
+      ? `<span class="${t.totalPnlPct >= 0 ? 'green' : 'red'}">${t.totalPnlPct >= 0 ? '+' : ''}${t.totalPnlPct.toFixed(1)}%</span>`
+      : '<span style="color:var(--text3)">—</span>';
+
+    const short = `${t.address.slice(0, 6)}…${t.address.slice(-4)}`;
+    const gmgn  = `https://gmgn.ai/sol/token/${t.address}`;
+
+    return `<tr>
+      <td style="font-weight:700">${t.symbol}</td>
+      <td style="color:var(--yellow)">${fmtAge(t.ageMin)}</td>
+      <td style="color:var(--text2)">${fmtUSD(t.fdv)}</td>
+      <td style="color:var(--cyan)">${fmtUSD(t.liquidity)}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:7px">
+          ${sparkline(t.candles)}
+          <span style="font-size:11px">${fmtPrice(t.currentPrice)}</span>
+        </div>
+      </td>
+      <td>
+        <div class="rsi-wrap">
+          <span style="min-width:34px;color:${rsiCol};font-size:12px;font-weight:600">${rsiVal}</span>
+          <div class="rsi-bar">
+            <div class="rsi-fill" style="width:${rsiPct}%;background:${rsiCol}"></div>
+          </div>
+        </div>
+      </td>
+      <td>${STATUS_HTML[t.status] || t.status}</td>
+      <td>${pnlLive}</td>
+      <td>${pnlTotal}</td>
+      <td style="color:var(--text2);text-align:center">${t.tradeCount || 0}</td>
+      <td>
+        <a href="${gmgn}" target="_blank" rel="noopener"
+           class="token-link" title="${t.address}">${short}</a>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// 策略 key → 中文标签（与 monitor.js _recordSignal strategy 字段严格对应）
+const STRATEGY_LABELS = {
+  'RSI_CROSSUP_30':   '买入: RSI上穿30',
+  'RSI_EXTREME_80':   '卖出: RSI≥80',
+  'RSI_CROSSDOWN_70': '卖出: RSI下穿70',
+  'EXIT_FDV_TOO_LOW': '退出: FDV过低',
+  'EXIT_AGE_EXPIRED': '退出: 超30分钟',
+  'EXIT_MANUAL':      '手动退出',
+};
+
+function renderSignals() {
+  const list = document.getElementById('sig-list');
+  document.getElementById('sig-badge').textContent = `${signals.length} signals`;
+
+  if (signals.length === 0) {
+    list.innerHTML = '<div class="empty-td">暂无信号记录</div>';
+    return;
+  }
+
+  list.innerHTML = signals.slice(0, 100).map(s => {
+    const ts         = new Date(s.timestamp).toLocaleTimeString('zh-CN', { hour12: false });
+    const typeHtml   = s.type === 'BUY'
+      ? '<span class="sig-buy">🟢 BUY</span>'
+      : '<span class="sig-sell">🔴 SELL</span>';
+    const stratLabel = STRATEGY_LABELS[s.strategy] || s.strategy;
+    const addrShort  = s.address ? `${s.address.slice(0, 8)}…` : '';
+
+    return `<div class="signal-row">
+      <span class="sig-time">${ts}</span>
+      <span class="sig-symbol">${s.symbol}</span>
+      ${typeHtml}
+      <span class="sig-strat">${stratLabel}</span>
+      <span class="sig-addr">${addrShort}</span>
+      <span class="sig-price">${fmtPrice(s.price)}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderStats(stats) {
+  if (!stats) return;
+  document.getElementById('s-total').textContent  = stats.total  || 0;
+  document.getElementById('s-bought').textContent = stats.bought || 0;
+  document.getElementById('s-sigs').textContent   = stats.signalCount || 0;
+  const pnl = stats.totalPnlPct || 0;
+  const el  = document.getElementById('s-pnl');
+  el.textContent = `${pnl >= 0 ? '+' : ''}${pnl.toFixed(1)}%`;
+  el.className   = `stat-value ${pnl > 0 ? 'green' : pnl < 0 ? 'red' : ''}`;
+}
+
+// ════════════════════════════════════════════════════════
+//  启动：立即拉取，之后每 5 秒轮询
+// ════════════════════════════════════════════════════════
+fetchAll();
+setInterval(fetchAll, 5000);
+</script>
+</body>
+</html>
